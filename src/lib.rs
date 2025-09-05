@@ -4,7 +4,7 @@ pub mod draw;
 pub mod viewer;
 
 pub use draw::{Renderer, Style};
-pub use viewer::{RowViewer, UiAction};
+pub use viewer::{RowViewer, UiAction, CustomMenuItem, SelectionSnapshot, UserCommand};
 
 /// You may want to sync egui version with this crate.
 pub extern crate egui;

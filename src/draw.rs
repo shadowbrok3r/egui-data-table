@@ -1,6 +1,6 @@
 use std::mem::{replace, take};
 
-use egui::{Align, Color32, CornerRadius, Event, Label, Layout, PointerButton, PopupAnchor, Rect, Response, RichText, Sense, Stroke, StrokeKind, Tooltip, Vec2b};
+use egui::{Align, Color32, Event, Label, Layout, PointerButton, PopupAnchor, Rect, Response, RichText, Sense, Stroke, StrokeKind, Tooltip, Vec2b};
 use egui_extras::Column;
 use tap::prelude::{Pipe, Tap};
 
@@ -714,8 +714,9 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                         Some((b_undo, "⎗", "context-menu-undo", UiAction::Undo)),
                         Some((b_redo, "⎘", "context-menu-redo", UiAction::Redo)),
                     ];
-
-                    context_menu_items.map(|opt| {
+                    
+                    // Render built-in items
+                    for opt in context_menu_items {
                         if let Some((icon, key, action)) =
                             opt.filter(|x| x.0).map(|x| (x.1, x.2, x.3))
                         {
@@ -747,7 +748,62 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                             n_sep_menu = 0;
                             draw_sep = true;
                         }
-                    });
+                    }
+
+                    // Render custom items contributed by the viewer
+                    let ui_ctx = s.ui_action_context();
+                    let selection_snapshot = {
+                        // Build a lightweight snapshot to pass into the callback
+                        let mut selected_rows = Vec::new();
+                        if let Some(sels) = s.cursor_as_selection() {
+                            let mut rows = std::collections::BTreeSet::new();
+                            for sel in sels.iter() {
+                                let (top, _) = sel.0.row_col(s.vis_cols().len());
+                                let (bottom, _) = sel.1.row_col(s.vis_cols().len());
+                                for r in top.0..=bottom.0 { rows.insert(r); }
+                            }
+                            for r in rows { let row_id = s.cc_rows[r].0; selected_rows.push((row_id, &table.rows[row_id])); }
+                        }
+
+                        let mut selected_cells = Vec::new();
+                        if let Some(sels) = s.cursor_as_selection() {
+                            for sel in sels.iter() {
+                                let (top, left) = sel.0.row_col(s.vis_cols().len());
+                                let (bottom, right) = sel.1.row_col(s.vis_cols().len());
+                                for r in top.0..=bottom.0 {
+                                    for c in left.0..=right.0 {
+                                        let row_id = s.cc_rows[r].0;
+                                        let col = s.vis_cols()[c].0;
+                                        selected_cells.push((row_id, col));
+                                    }
+                                }
+                            }
+                        }
+
+                        let (ic_r, ic_c) = s.interactive_cell();
+                        let interactive_cell = if s.cc_rows.is_empty() { None } else { Some((s.cc_rows[ic_r.0].0, s.vis_cols()[ic_c.0].0)) };
+
+                        crate::viewer::SelectionSnapshot {
+                            selected_rows,
+                            selected_cells,
+                            interactive_cell,
+                            visible_columns: s.vis_cols().len(),
+                        }
+                    };
+
+                    let custom_items = viewer.custom_context_menu_items(&ui_ctx, &selection_snapshot);
+                    if !custom_items.is_empty() {
+                        ui.separator();
+                        for item in custom_items {
+                            if !item.enabled { continue; }
+                            ui.horizontal(|ui| {
+                                if let Some(icon) = item.icon { ui.monospace(icon); }
+                                let btn = egui::Button::new(item.label);
+                                let r = ui.centered_and_justified(|ui| ui.add(btn)).inner;
+                                if r.clicked() { actions.push(UiAction::Custom(item.id)); }
+                            });
+                        }
+                    }
                 });
 
                 // Forward DnD event if not any event was consumed by the response.

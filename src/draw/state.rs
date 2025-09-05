@@ -753,9 +753,9 @@ impl<R> UiState<R> {
     }
 
     pub fn cci_sel_update_row(&mut self, row: VisRowPos) {
-        [0, self.p.vis_cols.len() - 1].map(|col| {
-            self.cci_sel_update(row.linear_index(self.p.vis_cols.len(), VisColumnPos(col)))
-        });
+    let ncol = self.p.vis_cols.len();
+    self.cci_sel_update(row.linear_index(ncol, VisColumnPos(0)));
+    self.cci_sel_update(row.linear_index(ncol, VisColumnPos(ncol - 1)));
     }
 
     pub fn has_cci_selection(&self) -> bool {
@@ -1273,7 +1273,7 @@ impl<R> UiState<R> {
         self.cci_want_move_scroll = true;
 
         let (ic_r, ic_c) = self.cc_interactive_cell.row_col(self.p.vis_cols.len());
-        match action {
+    match action {
             UiAction::SelectionStartEditing => {
                 let row_id = self.cc_rows[ic_r.0];
                 let src_row = &table.rows[row_id.0];
@@ -1283,6 +1283,78 @@ impl<R> UiState<R> {
                 } else {
                     vec![]
                 }
+            }
+            UiAction::Custom(action_id) => {
+                // Build selection snapshot for the callback
+                let selection_snapshot = {
+                    let mut selected_rows = Vec::new();
+                    if let Some(sels) = self.cursor_as_selection() {
+                        let mut rows = BTreeSet::new();
+                        for sel in sels.iter() {
+                            let (top, _) = sel.0.row_col(self.p.vis_cols.len());
+                            let (bottom, _) = sel.1.row_col(self.p.vis_cols.len());
+                            for r in top.0..=bottom.0 { rows.insert(r); }
+                        }
+                        for r in rows { let row_id = self.cc_rows[r].0; selected_rows.push((row_id, &table.rows[row_id])); }
+                    }
+
+                    let mut selected_cells = Vec::new();
+                    if let Some(sels) = self.cursor_as_selection() {
+                        for sel in sels.iter() {
+                            let (top, left) = sel.0.row_col(self.p.vis_cols.len());
+                            let (bottom, right) = sel.1.row_col(self.p.vis_cols.len());
+                            for r in top.0..=bottom.0 {
+                                for c in left.0..=right.0 {
+                                    let row_id = self.cc_rows[r].0;
+                                    let col = self.p.vis_cols[c].0;
+                                    selected_cells.push((row_id, col));
+                                }
+                            }
+                        }
+                    }
+
+                    let (ic_r, ic_c) = self.cc_interactive_cell.row_col(self.p.vis_cols.len());
+                    let interactive_cell = if self.cc_rows.is_empty() { None } else { Some((self.cc_rows[ic_r.0].0, self.p.vis_cols[ic_c.0].0)) };
+
+                    crate::viewer::SelectionSnapshot {
+                        selected_rows,
+                        selected_cells,
+                        interactive_cell,
+                        visible_columns: self.p.vis_cols.len(),
+                    }
+                };
+
+                let user_cmds = vwr.on_custom_action(action_id, &selection_snapshot);
+                // Translate user commands into internal Commands
+                let mut cmds: Vec<Command<R>> = Vec::new();
+                for uc in user_cmds {
+                    match uc {
+                        crate::viewer::UserCommand::SetCells { slab, values, context } => {
+                            let slab: Box<[R]> = slab;
+                            let values: Box<[(RowIdx, ColumnIdx, RowSlabIndex)]> = values
+                                .into_iter()
+                                .map(|(r, c, sidx)| (RowIdx(r), ColumnIdx(c), RowSlabIndex(sidx)))
+                                .collect::<Vec<_>>()
+                                .into_boxed_slice();
+                            if let Some(ctx) = context {
+                                cmds.push(Command::CcSetCells { slab, values, context: ctx });
+                            } else {
+                                cmds.push(Command::SetCells { slab, values });
+                            }
+                        }
+                        crate::viewer::UserCommand::SetRowValue(r, v) => {
+                            cmds.push(Command::SetRowValue(RowIdx(r), v));
+                        }
+                        crate::viewer::UserCommand::InsertRows(pos, rows) => {
+                            cmds.push(Command::InsertRows(RowIdx(pos), rows));
+                        }
+                        crate::viewer::UserCommand::RemoveRows(rows) => {
+                            let rows = rows.into_iter().map(RowIdx).collect();
+                            cmds.push(Command::RemoveRow(rows));
+                        }
+                    }
+                }
+                cmds
             }
             UiAction::CancelEdition => vec![Command::CcCancelEdit],
             UiAction::CommitEdition => vec![Command::CcCommitEdit],

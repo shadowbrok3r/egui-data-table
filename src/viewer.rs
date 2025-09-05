@@ -4,6 +4,60 @@ use egui::{Key, KeyboardShortcut, Modifiers};
 pub use egui_extras::Column as TableColumnConfig;
 use tap::prelude::Pipe;
 
+/// A snapshot of the current selection and context for use by custom callbacks.
+#[derive(Debug, Clone)]
+pub struct SelectionSnapshot<'a, R> {
+    /// Selected row ids and their values.
+    pub selected_rows: Vec<(usize, &'a R)>,
+    /// Selected cells as pairs of (row_id, column_index).
+    pub selected_cells: Vec<(usize, usize)>,
+    /// The interactive cell if any, as (row_id, column_index).
+    pub interactive_cell: Option<(usize, usize)>,
+    /// Number of currently visible columns.
+    pub visible_columns: usize,
+}
+
+/// A menu item contributed by the RowViewer for the context menu.
+#[derive(Debug, Clone)]
+pub struct CustomMenuItem {
+    /// A stable identifier used to dispatch the action.
+    pub id: &'static str,
+    /// Display label for the menu item.
+    pub label: String,
+    /// Optional icon or emoji prefix.
+    pub icon: Option<&'static str>,
+    /// Whether the item is enabled in the current context.
+    pub enabled: bool,
+}
+
+impl CustomMenuItem {
+    pub fn new(id: &'static str, label: impl Into<String>) -> Self {
+        Self { id, label: label.into(), icon: None, enabled: true }
+    }
+    pub fn icon(mut self, icon: &'static str) -> Self { self.icon = Some(icon); self }
+    pub fn enabled(mut self, enabled: bool) -> Self { self.enabled = enabled; self }
+}
+
+/// A user-issued command returned by custom actions. This will be translated into
+/// internal commands and integrated with undo/redo.
+#[derive(Debug, Clone)]
+pub enum UserCommand<R> {
+    /// Set multiple cells using a slab of row templates.
+    /// values: (row_id, column_index, slab_index). If `context` is Some, it will be
+    /// treated as a UI-originated write (e.g., Paste/Clear).
+    SetCells {
+        slab: Box<[R]>,
+        values: Box<[(usize, usize, usize)]>,
+        context: Option<CellWriteContext>,
+    },
+    /// Replace an entire row value.
+    SetRowValue(usize, Box<R>),
+    /// Insert rows before the given position (by row id).
+    InsertRows(usize, Box<[R]>),
+    /// Remove the given rows by row ids.
+    RemoveRows(Vec<usize>),
+}
+
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DecodeErrorBehavior {
     /// Skip the cell and continue decoding.
@@ -270,6 +324,27 @@ pub trait RowViewer<R>: 'static {
     fn persist_ui_state(&self) -> bool {
         false
     }
+
+    /// Provide custom context menu items based on the current UI state and selection.
+    /// Return an empty Vec to contribute nothing.
+    fn custom_context_menu_items(
+        &mut self,
+        _context: &UiActionContext,
+        _selection: &SelectionSnapshot<'_, R>,
+    ) -> Vec<CustomMenuItem> {
+        Vec::new()
+    }
+
+    /// Handle a custom action invoked from the context menu or other triggers.
+    /// Return high-level user commands which will be translated into internal commands
+    /// and integrated with undo/redo.
+    fn on_custom_action(
+        &mut self,
+        _action_id: &'static str,
+        _selection: &SelectionSnapshot<'_, R>,
+    ) -> Vec<UserCommand<R>> {
+        Vec::new()
+    }
 }
 
 /* ------------------------------------------- Context ------------------------------------------ */
@@ -362,6 +437,9 @@ pub enum UiAction {
 
     SelectionDuplicateValues,
     SelectAll,
+
+    /// Custom action contributed by the RowViewer. Carries a stable action id.
+    Custom(&'static str),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
