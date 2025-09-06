@@ -4,8 +4,8 @@ use std::str::FromStr;
 use egui::{Response, Sense, Widget};
 use egui::scroll_area::ScrollBarVisibility;
 use egui_data_table::{
-    viewer::{default_hotkeys, CellWriteContext, DecodeErrorBehavior, RowCodec, UiActionContext},
-    RowViewer,
+    viewer::{default_hotkeys, CellWriteContext, DecodeErrorBehavior, RowCodec, UiActionContext, CustomActionContext, CustomActionEditor},
+    CustomMenuItem, RowViewer, SelectionSnapshot,
 };
 
 /* ----------------------------------------- Columns -------------------------------------------- */
@@ -396,6 +396,84 @@ impl RowViewer<Row> for Viewer {
 
     fn on_row_removed(&mut self, row_index: usize, row: &Row) {
         println!("row removed. row_id: {}, values: {:?}", row_index, row);
+    }
+
+    // --- Custom context menu & actions ---
+    fn custom_context_menu_items(
+        &mut self,
+        _context: &UiActionContext,
+        selection: &SelectionSnapshot<'_, Row>,
+    ) -> Vec<CustomMenuItem> {
+        let has_name_cells = selection
+            .selected_cells
+            .iter()
+            .any(|&(_, col)| col == NAME);
+
+        let has_rows = !selection.selected_rows.is_empty();
+
+        let mut items = Vec::new();
+        if has_name_cells {
+            items.push(
+                CustomMenuItem::new("uppercase_names", "Uppercase Name(s)")
+                    .icon("🧹")
+                    .enabled(true),
+            );
+        }
+
+        if has_rows {
+            items.push(
+                CustomMenuItem::new("toggle_student", "Toggle Student For Row(s)")
+                    .icon("🔁")
+                    .enabled(true),
+            );
+        }
+
+        items
+    }
+
+    fn on_custom_action_ex(
+        &mut self,
+        action_id: &'static str,
+        ctx: &CustomActionContext<'_, Row>,
+        editor: &mut CustomActionEditor<Row>,
+    ) {
+        match action_id {
+            "uppercase_names" => {
+                // Use builder to queue per-cell writes based on selected cells or origin cell
+                let mut any = false;
+                // Prefer selected cells; fall back to origin cell if present
+                let mut cells: Vec<(usize, usize)> = ctx.selection.selected_cells.clone();
+                if cells.is_empty() {
+                    if let Some(oc) = ctx.origin_cell { cells.push(oc); }
+                }
+                for (row_id, col) in cells {
+                    if col != NAME { continue; }
+                    if let Some((_, row_ref)) = ctx.selection.selected_rows.iter().find(|(id, _)| *id == row_id) {
+                        let mut r = Row::default();
+                        r.name = row_ref.name.to_uppercase();
+                        editor.set_cell(row_id, NAME, r);
+                        any = true;
+                    }
+                }
+                if any { editor.commit_cells(Some(CellWriteContext::Paste)); }
+            }
+            "toggle_student" => {
+                // Toggle is_student for each selected row; fall back to origin cell's row
+                let mut rows: Vec<usize> = ctx.selection.selected_rows.iter().map(|(id, _)| *id).collect();
+                if rows.is_empty() {
+                    if let Some((row_id, _)) = ctx.origin_cell { rows.push(row_id); }
+                }
+                for row_id in rows {
+                    if let Some((_, row_ref)) = ctx.selection.selected_rows.iter().find(|(id, _)| *id == row_id) {
+                        let mut r = Row::default();
+                        r.is_student = !row_ref.is_student;
+                        editor.set_cell(row_id, IS_STUDENT, r);
+                    }
+                }
+                editor.commit_cells(Some(CellWriteContext::Paste));
+            }
+            _ => {}
+        }
     }
 }
 

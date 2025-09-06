@@ -790,6 +790,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                             visible_columns: s.vis_cols().len(),
                         }
                     };
+                    // origin_cell is passed during dispatch from state; nothing to do here.
 
                     let custom_items = viewer.custom_context_menu_items(&ui_ctx, &selection_snapshot);
                     if !custom_items.is_empty() {

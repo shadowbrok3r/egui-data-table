@@ -58,6 +58,71 @@ pub enum UserCommand<R> {
     RemoveRows(Vec<usize>),
 }
 
+/// Context provided to a custom action, including the origin cell (where the menu was opened)
+/// and a selection snapshot.
+#[derive(Debug, Clone)]
+pub struct CustomActionContext<'a, R> {
+    pub selection: SelectionSnapshot<'a, R>,
+    /// The cell where the action originates (row_id, column), if applicable.
+    pub origin_cell: Option<(usize, usize)>,
+}
+
+/// A builder-style editor that lets custom actions queue undoable changes in an ergonomic way.
+#[derive(Debug)]
+pub struct CustomActionEditor<R> {
+    cmds: Vec<UserCommand<R>>,
+    slab: Vec<R>,
+    values: Vec<(usize, usize, usize)>,
+}
+
+impl<R> CustomActionEditor<R> {
+    pub fn new() -> Self { Self { cmds: Vec::new(), slab: Vec::new(), values: Vec::new() } }
+
+    /// Queue a single cell write. Provide a row object whose relevant column is set.
+    /// The write will be applied to only the given column via RowViewer::set_cell_value.
+    pub fn set_cell(&mut self, row_id: usize, column: usize, src_row: R) -> &mut Self {
+        self.slab.push(src_row);
+        let idx = self.slab.len() - 1;
+        self.values.push((row_id, column, idx));
+        self
+    }
+
+    /// Queue a full-row replacement.
+    pub fn set_row(&mut self, row_id: usize, row: R) -> &mut Self {
+        self.cmds.push(UserCommand::SetRowValue(row_id, Box::new(row)));
+        self
+    }
+
+    /// Queue insertion of rows at a position.
+    pub fn insert_rows<I: IntoIterator<Item = R>>(&mut self, pos: usize, rows: I) -> &mut Self {
+        self.cmds.push(UserCommand::InsertRows(pos, rows.into_iter().collect::<Vec<_>>().into_boxed_slice()));
+        self
+    }
+
+    /// Queue removal of the given row ids.
+    pub fn remove_rows<I: IntoIterator<Item = usize>>(&mut self, rows: I) -> &mut Self {
+        self.cmds.push(UserCommand::RemoveRows(rows.into_iter().collect()));
+        self
+    }
+
+    /// Finalize any pending cell writes into a single SetCells command. Call with Some(ctx)
+    /// to mark writes as UI-originated (e.g., Paste/Clear), or None for programmatic.
+    pub fn commit_cells(&mut self, context: Option<CellWriteContext>) -> &mut Self {
+        if !self.values.is_empty() {
+            let slab = std::mem::take(&mut self.slab).into_boxed_slice();
+            let values = std::mem::take(&mut self.values).into_boxed_slice();
+            self.cmds.push(UserCommand::SetCells { slab, values, context });
+        }
+        self
+    }
+
+    /// Consume the editor and return all queued commands (auto-commits pending cells without context).
+    pub fn into_commands(mut self) -> Vec<UserCommand<R>> {
+        self.commit_cells(None);
+        self.cmds
+    }
+}
+
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DecodeErrorBehavior {
     /// Skip the cell and continue decoding.
@@ -344,6 +409,18 @@ pub trait RowViewer<R>: 'static {
         _selection: &SelectionSnapshot<'_, R>,
     ) -> Vec<UserCommand<R>> {
         Vec::new()
+    }
+
+    /// Ergonomic variant: handle a custom action with a context and a builder-style editor.
+    /// Default bridges to `on_custom_action` for backward compatibility.
+    fn on_custom_action_ex(
+        &mut self,
+        action_id: &'static str,
+        ctx: &CustomActionContext<'_, R>,
+        editor: &mut CustomActionEditor<R>,
+    ) {
+        let cmds = self.on_custom_action(action_id, &ctx.selection);
+        for c in cmds { editor.cmds.push(c); }
     }
 }
 

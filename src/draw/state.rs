@@ -1324,37 +1324,36 @@ impl<R> UiState<R> {
                     }
                 };
 
-                let user_cmds = vwr.on_custom_action(action_id, &selection_snapshot);
+                // Provide origin_cell (the interactive cell at the moment)
+                let (ic_r, ic_c) = self.cc_interactive_cell.row_col(self.p.vis_cols.len());
+                let origin_cell = if self.cc_rows.is_empty() {
+                    None
+                } else {
+                    Some((self.cc_rows[ic_r.0].0, self.p.vis_cols[ic_c.0].0))
+                };
+
+                let ctx = crate::viewer::CustomActionContext { selection: selection_snapshot, origin_cell };
+                let mut editor = crate::viewer::CustomActionEditor::new();
+                vwr.on_custom_action_ex(action_id, &ctx, &mut editor);
+                let user_cmds = editor.into_commands();
+
                 // Translate user commands into internal Commands
-                let mut cmds: Vec<Command<R>> = Vec::new();
-                for uc in user_cmds {
-                    match uc {
-                        crate::viewer::UserCommand::SetCells { slab, values, context } => {
-                            let slab: Box<[R]> = slab;
-                            let values: Box<[(RowIdx, ColumnIdx, RowSlabIndex)]> = values
-                                .into_iter()
-                                .map(|(r, c, sidx)| (RowIdx(r), ColumnIdx(c), RowSlabIndex(sidx)))
-                                .collect::<Vec<_>>()
-                                .into_boxed_slice();
-                            if let Some(ctx) = context {
-                                cmds.push(Command::CcSetCells { slab, values, context: ctx });
-                            } else {
-                                cmds.push(Command::SetCells { slab, values });
-                            }
-                        }
-                        crate::viewer::UserCommand::SetRowValue(r, v) => {
-                            cmds.push(Command::SetRowValue(RowIdx(r), v));
-                        }
-                        crate::viewer::UserCommand::InsertRows(pos, rows) => {
-                            cmds.push(Command::InsertRows(RowIdx(pos), rows));
-                        }
-                        crate::viewer::UserCommand::RemoveRows(rows) => {
-                            let rows = rows.into_iter().map(RowIdx).collect();
-                            cmds.push(Command::RemoveRow(rows));
+                user_cmds.into_iter().map(|uc| match uc {
+                    crate::viewer::UserCommand::SetCells { slab, values, context } => {
+                        let values: Box<[(RowIdx, ColumnIdx, RowSlabIndex)]> = values
+                            .into_iter()
+                            .map(|(r, c, sidx)| (RowIdx(r), ColumnIdx(c), RowSlabIndex(sidx)))
+                            .collect::<Vec<_>>()
+                            .into_boxed_slice();
+                        match context {
+                            Some(ctx) => Command::CcSetCells { slab, values, context: ctx },
+                            None => Command::SetCells { slab, values },
                         }
                     }
-                }
-                cmds
+                    crate::viewer::UserCommand::SetRowValue(r, v) => Command::SetRowValue(RowIdx(r), v),
+                    crate::viewer::UserCommand::InsertRows(pos, rows) => Command::InsertRows(RowIdx(pos), rows),
+                    crate::viewer::UserCommand::RemoveRows(rows) => Command::RemoveRow(rows.into_iter().map(RowIdx).collect()),
+                }).collect()
             }
             UiAction::CancelEdition => vec![Command::CcCancelEdit],
             UiAction::CommitEdition => vec![Command::CcCommitEdit],
