@@ -576,15 +576,19 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                         visual.strong_text_color()
                     };
 
-                    // FIXME: After egui 0.27, now the widgets spawned inside this closure
-                    // intercepts interactions, which is basically natural behavior(Upper layer
-                    // widgets). However, this change breaks current implementation which relies on
-                    // the previous table behavior.
-                    ui.add_enabled_ui(false, |ui| {
-                        if !(is_editing && is_interactive_cell) {
-                            viewer.show_cell_view(ui, &table.rows[row_id.0], col.0);
-                        }
-                    });
+                    // Show the cell view without dimming visuals (do NOT disable the UI),
+                    // then place an invisible interaction blocker on top to prevent
+                    // inner widgets from intercepting input.
+                    if !(is_editing && is_interactive_cell) {
+                        viewer.show_cell_view(ui, &table.rows[row_id.0], col.0);
+
+                        // Block interactions over the cell content without changing visuals.
+                        // Use a stable id per cell.
+                        let mut sense = Sense::click_and_drag();
+                        sense.set(Sense::FOCUSABLE, false);
+                        let blocker_id = ui.id().with(("egui_data_table_cell_block", row_id.0, col.0));
+                        let _ = ui.interact(ui_max_rect, blocker_id, sense);
+                    }
 
                     #[cfg(any())]
                     if selected {
