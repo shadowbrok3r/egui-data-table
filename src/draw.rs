@@ -524,7 +524,10 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                 let is_interactive_cell = interactive_row.is_some_and(|x| x == vis_col);
                 let mut response_consumed = s.is_editing();
 
-                let (rect, resp) = row.col(|ui| {
+                // Collect response from an interaction blocker overlay (added inside the cell)
+                // and union it with the column response so the table still receives clicks/drags.
+                let mut cell_blocker_resp: Option<egui::Response> = None;
+                let (rect, resp_inner) = row.col(|ui| {
                     let ui_max_rect = ui.max_rect();
 
                     if cci_selected {
@@ -587,8 +590,10 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                         let mut sense = Sense::click_and_drag();
                         sense.set(Sense::FOCUSABLE, false);
                         let blocker_id = ui.id().with(("egui_data_table_cell_block", row_id.0, col.0));
-                        let _ = ui.interact(ui_max_rect, blocker_id, sense);
+                        let r = ui.interact(ui_max_rect, blocker_id, sense);
+                        cell_blocker_resp = Some(r);
                     }
+
 
                     #[cfg(any())]
                     if selected {
@@ -621,6 +626,12 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                         editing_cell_rect = ui_max_rect;
                     }
                 });
+
+                let resp = if let Some(br) = cell_blocker_resp {
+                    resp_inner.union(br)
+                } else {
+                    resp_inner
+                };
 
                 new_maximum_height = rect.height().max(new_maximum_height);
 

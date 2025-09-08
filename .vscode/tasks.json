@@ -1,12 +1,18 @@
 {
-    "version": "2.0.0",
-    "tasks": [
-        {
-            "label": "Build.Demo",
-            "type": "shell",
-            "group": "build",
-            "command": "cargo build --example demo",
-            "problemMatcher": "$rustc"
-        }
-    ]
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Build.Demo",
+			"type": "shell",
+			"group": "build",
+			"command": "cargo build --example demo",
+			"problemMatcher": "$rustc"
+		},
+		{
+			"label": "Build.Demo",
+			"type": "shell",
+			"command": "cargo build --example demo",
+			"group": "build"
+		}
+	]
 }
