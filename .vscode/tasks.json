@@ -13,6 +13,42 @@
 			"type": "shell",
 			"command": "cargo build --example demo",
 			"group": "build"
+		},
+		{
+			"label": "Build.Demo",
+			"type": "shell",
+			"command": "cargo build --example demo",
+			"group": "build"
+		},
+		{
+			"label": "Build.Demo",
+			"type": "shell",
+			"command": "cargo build --example demo",
+			"group": "build"
+		},
+		{
+			"label": "Build.Demo",
+			"type": "shell",
+			"command": "cargo build --example demo",
+			"group": "build"
+		},
+		{
+			"label": "Build.Demo",
+			"type": "shell",
+			"command": "cargo build --example demo",
+			"group": "build"
+		},
+		{
+			"label": "Build.Demo",
+			"type": "shell",
+			"command": "cargo build --example demo",
+			"group": "build"
+		},
+		{
+			"label": "Build.Demo",
+			"type": "shell",
+			"command": "cargo build --example demo",
+			"group": "build"
 		}
 	]
 }

@@ -215,6 +215,7 @@ pub(crate) struct UiState<R> {
 
     /// How many rows are rendered at once recently?
     pub cci_page_row_count: usize,
+
 }
 
 #[cfg_attr(feature = "persistency", derive(serde::Serialize, serde::Deserialize))]
