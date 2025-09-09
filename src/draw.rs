@@ -448,21 +448,15 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
             let mut editing_cell_rect = Rect::NOTHING;
             let interactive_row = s.is_interactive_row(vis_row);
 
-            let check_mouse_dragging_selection = {
-                let s_cci_has_focus = s.cci_has_focus;
-                let s_cci_has_selection = s.has_cci_selection();
-
-                move |rect: &Rect, resp: &egui::Response| {
-                    let cci_hovered: bool = s_cci_has_focus
-                        && s_cci_has_selection
-                        && rect
-                            .with_max_x(resp.rect.right())
-                            .contains(pointer_interact_pos);
-                    let sel_drag = cci_hovered && pointer_primary_down;
-                    let sel_click = !s_cci_has_selection && resp.hovered() && pointer_primary_down;
-
-                    sel_drag || sel_click
+            let check_mouse_dragging_selection = |has_selection: bool, rect: &Rect, resp: &egui::Response| {
+                // Geometry-based: while primary is down, update selection for the hovered cell.
+                // Start selection on simple hover+down when there is no selection yet.
+                let drop_area_rect = rect.with_max_x(resp.rect.right());
+                if pointer_primary_down {
+                    if !has_selection && resp.hovered() { return true; }
+                    if drop_area_rect.contains(pointer_interact_pos) { return true; }
                 }
+                false
             };
 
             /* -------------------------------- Header Rendering -------------------------------- */
@@ -505,7 +499,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                 });
             });
 
-            if check_mouse_dragging_selection(&head_rect, &head_resp) {
+            if check_mouse_dragging_selection(s.has_cci_selection(), &head_rect, &head_resp) {
                 s.cci_sel_update_row(vis_row);
             }
 
@@ -583,22 +577,17 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                     };
 
                     // Show the cell view without dimming visuals (do NOT disable the UI).
-                    // If the cell is not being edited and is NOT interactive-in-view, we
-                    // place an invisible interaction blocker on top to preserve Excel-like
-                    // selection behavior. For interactive-in-view cells, we do not block,
-                    // so the inner widget can receive clicks directly.
+                    // In view mode, always place an invisible blocker on top so the table
+                    // handles click+drag selection consistently (Excel-like). For interactive
+                    // cells, we'll switch into edit mode on hover to enable interaction.
                     if !(is_editing && is_interactive_cell) {
                         viewer.show_cell_view(ui, &table.rows[row_id.0], col.0);
 
-                        if !interactive_in_view {
-                            // Block interactions over the cell content without changing visuals.
-                            // Use a stable id per cell.
-                            let mut sense = Sense::click_and_drag();
-                            sense.set(Sense::FOCUSABLE, false);
-                            let blocker_id = ui.id().with(("egui_data_table_cell_block", row_id.0, col.0));
-                            let r = ui.interact(ui_max_rect, blocker_id, sense);
-                            cell_blocker_resp = Some(r);
-                        }
+                        let mut sense = Sense::click_and_drag();
+                        sense.set(Sense::FOCUSABLE, false);
+                        let block_id = ui.id().with(("egui_data_table_cell_block", row_id.0, col.0));
+                        let r = ui.interact(ui_max_rect, block_id, sense);
+                        cell_blocker_resp = Some(r);
                     }
 
 
@@ -640,26 +629,50 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                     resp_inner
                 };
 
+                // Ensure overall table response observes per-cell interactions so focus and
+                // drag state are updated correctly (required for drag-to-select to work).
+                if let Some(rt) = &mut resp_total {
+                    *rt = rt.union(resp.clone());
+                } else {
+                    resp_total = Some(resp.clone());
+                }
+
                 new_maximum_height = rect.height().max(new_maximum_height);
 
-                // -- Mouse Actions --
-                // For interactive-in-view cells, start selection only on drag (not simple click)
-                // so clicking a button doesn't instantly select. For non-interactive cells,
-                // preserve existing behavior.
-                if check_mouse_dragging_selection(&rect, &resp)
-                    && (!interactive_in_view || resp.dragged())
+                // -- Hover & Mouse Actions --
+                // Keep interactive row highlight in sync with pointer hover when not editing.
+                if !s.is_editing() && rect.contains(pointer_interact_pos) {
+                    s.set_interactive_cell(vis_row, vis_col);
+                }
+
+                // Hover-to-edit: if this cell is interactive-in-view, editable, not already
+                // editing, hovered, and we are NOT dragging selection, switch to edit mode.
+                let editable = viewer.is_editable_cell(vis_col.0, vis_row.0, &table.rows[row_id.0]);
+                if editable
+                    && interactive_in_view
+                    && !s.is_editing()
+                    && resp.hovered()
+                    && !pointer_primary_down
                 {
-                    // Expand cci selection
+                    commands.push(Command::CcEditStart(
+                        row_id,
+                        vis_col,
+                        viewer.clone_row(&table.rows[row_id.0]).into(),
+                    ));
+                    edit_started = true;
+                }
+
+                // Drag-select and click-select using the existing helper, now that our blocker
+                // consistently captures interactions in view mode.
+                if check_mouse_dragging_selection(s.has_cci_selection(), &rect, &resp) {
                     response_consumed = true;
                     s.cci_sel_update(linear_index);
                 }
 
-                let editable = viewer.is_editable_cell(vis_col.0, vis_row.0, &table.rows[row_id.0]);
-
                 if editable
                     && (resp.clicked_by(PointerButton::Primary)
                         && (self.style.single_click_edit_mode || is_interactive_cell))
-                    && !interactive_in_view // don't auto-enter edit for view-interactive cells
+                    && !interactive_in_view // for view-interactive cells, hover will enter edit
                 {
                     response_consumed = true;
                     commands.push(Command::CcEditStart(

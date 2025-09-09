@@ -187,6 +187,13 @@ impl RowCodec<Row> for Codec {
 
 impl RowViewer<Row> for Viewer {
 
+    fn is_interactive_in_view(&mut self, _row: &Row, _column: usize) -> bool {
+        match _column {
+            5|3 => true,
+            _ => false
+        }    
+    }
+
     fn on_highlight_cell(&mut self, row: &Row, column: usize) {
         println!("cell highlighted: row: {:?}, column: {}", row, column);
     }
