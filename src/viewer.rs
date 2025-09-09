@@ -279,6 +279,21 @@ pub trait RowViewer<R>: 'static {
     /// containing cell.
     fn show_cell_view(&mut self, ui: &mut egui::Ui, row: &R, column: usize);
 
+    /// Whether the cell's view (shown via `show_cell_view`) contains interactive widgets
+    /// that should receive pointer input directly without requiring the cell to enter
+    /// edit mode.
+    ///
+    /// Default is `false` which preserves the legacy behavior where the table consumes
+    /// clicks for selection and you must enter edit mode first. Override and return `true`
+    /// for cells that render buttons, toggles, links, etc., and you want them to be
+    /// clickable directly in view-mode.
+    ///
+    /// Note: when this returns `true`, the table will still allow drag-selection starting
+    /// from such a cell, but only when an actual drag is detected (i.e. moving the pointer).
+    /// A simple click will be passed to the inner widget instead of starting a selection
+    /// or entering edit mode.
+    fn is_interactive_in_view(&mut self, _row: &R, _column: usize) -> bool { false }
+
     /// Use this to check if given cell is going to take any dropped payload / use as drag
     /// source.
     fn on_cell_view_response(

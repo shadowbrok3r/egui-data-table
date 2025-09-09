@@ -523,6 +523,9 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                 let is_editing = edit_state.is_some();
                 let is_interactive_cell = interactive_row.is_some_and(|x| x == vis_col);
                 let mut response_consumed = s.is_editing();
+                // Opt-in: allow the cell view to be interactive without entering edit mode
+                // (e.g., buttons, checkboxes, links). This is queried per cell.
+                let interactive_in_view = viewer.is_interactive_in_view(&table.rows[row_id.0], col.0);
 
                 // Collect response from an interaction blocker overlay (added inside the cell)
                 // and union it with the column response so the table still receives clicks/drags.
@@ -579,19 +582,23 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                         visual.strong_text_color()
                     };
 
-                    // Show the cell view without dimming visuals (do NOT disable the UI),
-                    // then place an invisible interaction blocker on top to prevent
-                    // inner widgets from intercepting input.
+                    // Show the cell view without dimming visuals (do NOT disable the UI).
+                    // If the cell is not being edited and is NOT interactive-in-view, we
+                    // place an invisible interaction blocker on top to preserve Excel-like
+                    // selection behavior. For interactive-in-view cells, we do not block,
+                    // so the inner widget can receive clicks directly.
                     if !(is_editing && is_interactive_cell) {
                         viewer.show_cell_view(ui, &table.rows[row_id.0], col.0);
 
-                        // Block interactions over the cell content without changing visuals.
-                        // Use a stable id per cell.
-                        let mut sense = Sense::click_and_drag();
-                        sense.set(Sense::FOCUSABLE, false);
-                        let blocker_id = ui.id().with(("egui_data_table_cell_block", row_id.0, col.0));
-                        let r = ui.interact(ui_max_rect, blocker_id, sense);
-                        cell_blocker_resp = Some(r);
+                        if !interactive_in_view {
+                            // Block interactions over the cell content without changing visuals.
+                            // Use a stable id per cell.
+                            let mut sense = Sense::click_and_drag();
+                            sense.set(Sense::FOCUSABLE, false);
+                            let blocker_id = ui.id().with(("egui_data_table_cell_block", row_id.0, col.0));
+                            let r = ui.interact(ui_max_rect, blocker_id, sense);
+                            cell_blocker_resp = Some(r);
+                        }
                     }
 
 
@@ -636,7 +643,12 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                 new_maximum_height = rect.height().max(new_maximum_height);
 
                 // -- Mouse Actions --
-                if check_mouse_dragging_selection(&rect, &resp) {
+                // For interactive-in-view cells, start selection only on drag (not simple click)
+                // so clicking a button doesn't instantly select. For non-interactive cells,
+                // preserve existing behavior.
+                if check_mouse_dragging_selection(&rect, &resp)
+                    && (!interactive_in_view || resp.dragged())
+                {
                     // Expand cci selection
                     response_consumed = true;
                     s.cci_sel_update(linear_index);
@@ -647,6 +659,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                 if editable
                     && (resp.clicked_by(PointerButton::Primary)
                         && (self.style.single_click_edit_mode || is_interactive_cell))
+                    && !interactive_in_view // don't auto-enter edit for view-interactive cells
                 {
                     response_consumed = true;
                     commands.push(Command::CcEditStart(
