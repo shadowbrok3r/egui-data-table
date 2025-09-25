@@ -580,7 +580,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                     // intercepts interactions, which is basically natural behavior(Upper layer
                     // widgets). However, this change breaks current implementation which relies on
                     // the previous table behavior.
-                    ui.add_enabled_ui(false, |ui| {
+                    ui.add_enabled_ui(true, |ui| {
                         if !(is_editing && is_interactive_cell) {
                             viewer.show_cell_view(ui, &table.rows[row_id.0], col.0);
                         }
