@@ -4,10 +4,8 @@ use std::{
     mem::{replace, take},
 };
 use std::collections::HashSet;
-use egui::{
-    ahash::{AHasher, HashMap, HashMapExt},
-    Modifiers,
-};
+use ahash::{AHasher, HashMap, HashMapExt};
+use egui::Modifiers;
 use itertools::Itertools;
 use tap::prelude::{Pipe, Tap};
 
