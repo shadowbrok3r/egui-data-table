@@ -1,7 +1,8 @@
 /target
 /demo/dist
 
-.cargo
+.cargo/*
+!.cargo/config.toml
 
 .vscode/launch.json
 Cargo.lock
