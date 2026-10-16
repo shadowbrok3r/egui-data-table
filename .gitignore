@@ -3,6 +3,9 @@
 
 .cargo/*
 !.cargo/config.toml
+.claude
+ai-docs/**/*.local.md
+ai-docs/.deps/
 
 .vscode/launch.json
 Cargo.lock
