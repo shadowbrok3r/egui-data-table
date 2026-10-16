@@ -14,8 +14,8 @@ members = ["demo"]
 
 [dependencies]
 ahash = "0.8"
-egui = "0.36"
-egui_extras = { version = "0.36", default-features = false, features = [
+egui = "0.37"
+egui_extras = { version = "0.37", default-features = false, features = [
     "serde",
 ] }
 tap = "1"
@@ -24,7 +24,7 @@ serde = { version = "1", optional = true, features = ["derive"] }
 thiserror = "2"
 
 [dev-dependencies]
-eframe = { version = "0.36", features = ["serde", "persistence"] }
+eframe = { version = "0.37", features = ["serde", "persistence"] }
 fastrand = "2"
 names = { version = "0.14", default-features = false }
 log = "0.4"

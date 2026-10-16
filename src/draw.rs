@@ -236,7 +236,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                     resp.dnd_set_drag_payload(vis_col);
 
                     if resp.dragged() {
-                        Tooltip::always_open(ctx.clone(), ui_layer_id, "_EGUI_DATATABLE__COLUMN_MOVE__".into(), PopupAnchor::Pointer)
+                        Tooltip::always_open(ctx.clone(), ui_layer_id, egui::Id::unique("_EGUI_DATATABLE__COLUMN_MOVE__"), PopupAnchor::Pointer)
                             .gap(12.0)
                             .show(|ui|{
                                 let colum_name = viewer.column_name(col.0);
